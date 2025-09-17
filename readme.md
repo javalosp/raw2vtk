@@ -31,19 +31,19 @@ The repository is organised as follows. The `release/` (or `debug/`)and `output/
 ├── Makefile           # Build script for the project
 ├── build_on_hpc.sh    # Bash script for building on Imperial's HPC
 ├── hpc_test.pbs       # Example script for running on Imperial's HPC (requires an image file)
-├── src/               # Directory for all C++ source (.cpp) files
-│   ├── main.cpp
-│   ├── Preprocessor.cpp
-│   ├── Domain.cpp
-│   ├── MPIDetails.cpp
-│   ├── MPIDomain.cpp
-│   └── MPIRawLoader.cpp
-├── Preprocessor.h     # Header files are in the root directory
-├── Domain.h
-├── MPIDetails.h
-├── MPIDomain.h
-├── MPIRawLoader.h
-└── compiler_opts.h
+├── src/               # Directory for all C++ source (.cpp) and header (.h) files
+    ├── main.cpp
+    ├── Preprocessor.cpp
+    ├── Domain.cpp
+    ├── MPIDetails.cpp
+    ├── MPIDomain.cpp
+    ├── MPIRawLoader.cpp
+    ├── Preprocessor.h     # Header files are in the root directory
+    ├── Domain.h
+    ├── MPIDetails.h
+    ├── MPIDomain.h
+    ├── MPIRawLoader.h
+    └── compiler_opts.h
 ```
 
 ---
@@ -67,6 +67,7 @@ The project is built using the provided `Makefile`.
 
     The compiled executable (e.g., `raw2vtk_uint8`) will be placed in the `release/` directory.
 
+For building on Imperial's HPC use the `build_on_hpc.sh` script provided
 ---
 
 ## Usage

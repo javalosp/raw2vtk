@@ -11,7 +11,7 @@ namespace opts = boost::program_options;
 
 /**
  * @brief Main entry point for the RAW to VTK preprocessing application.
- * @details This function excecutes the preprocessing workflow. It initialises MPI,
+ * @details This function executes the preprocessing workflow. It initialises MPI,
  * parses command-line arguments for domain dimensions and file paths, sets up the
  * distributed computational domain, reads the source .raw file, and writes the
  * output to a parallel VTK file format.

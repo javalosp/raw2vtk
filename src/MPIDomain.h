@@ -355,6 +355,7 @@ public:
 		MPISubIndex<S>::mpi_comm_size = mpi_comm_size;
 		MPISubIndex<S>::mpi_rank = mpi_rank;
 	}
+
 	/**
 	 * @brief Converts a 1D array index local to this process into a 1D global array index.
 	 * @param local_idx The 1D index in the local process's data array.
