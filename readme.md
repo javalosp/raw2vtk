@@ -30,7 +30,7 @@ The repository is organised as follows. The `release/` (or `debug/`)and `output/
 .
 ├── Makefile           # Build script for the project
 ├── build_on_hpc.sh    # Bash script for building on Imperial's HPC
-├── hpc_test.pbs       # Example script for running on Imperial's HPC
+├── hpc_test.pbs       # Example script for running on Imperial's HPC (requires an image file)
 ├── src/               # Directory for all C++ source (.cpp) files
 │   ├── main.cpp
 │   ├── Preprocessor.cpp
@@ -106,6 +106,6 @@ The program generates a set of files in the specified output directory:
 
 * **A master file**: material_domain.pvti (or a similar name based on the output path).
 
-* **Piece files**: material_domain_0.vti, material_domain_1.vti, etc., with one file for each MPI process.
+* **Part files**: material_domain_0.vti, material_domain_1.vti, etc., with one file for each MPI process.
 
 You can open the single .pvti file in ParaView to visualise the unified domain.
