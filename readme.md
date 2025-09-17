@@ -68,6 +68,7 @@ The project is built using the provided `Makefile`.
     The compiled executable (e.g., `raw2vtk_uint8`) will be placed in the `release/` directory.
 
 For building on Imperial's HPC use the `build_on_hpc.sh` script provided
+
 ---
 
 ## Usage
