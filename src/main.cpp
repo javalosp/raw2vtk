@@ -9,6 +9,16 @@
 
 namespace opts = boost::program_options;
 
+/**
+ * @brief Main entry point for the RAW to VTK preprocessing application.
+ * @details This function excecutes the preprocessing workflow. It initialises MPI,
+ * parses command-line arguments for domain dimensions and file paths, sets up the
+ * distributed computational domain, reads the source .raw file, and writes the
+ * output to a parallel VTK file format.
+ * @param argc The number of command-line arguments.
+ * @param argv An array of command-line arguments.
+ * @return Returns 0 on successful execution, 1 on error.
+ */
 int main(int argc, char *argv[])
 {
     try
@@ -18,7 +28,7 @@ int main(int argc, char *argv[])
         int mpi_rank;
         MPI_Comm_rank(MPI_COMM_WORLD, &mpi_rank);
 
-        // 1. Command line arguments
+        // Command line arguments
         opts::options_description cmd_opts("Usage");
         cmd_opts.add_options()("help,h", "Print this help message")("raw-file", opts::value<std::string>()->required(), "Input RAW file specifying the domain.")("x-ext", opts::value<int>()->required(), "The x extent (width) of the domain.")("y-ext", opts::value<int>()->required(), "The y extent (height) of the domain.")("z-ext", opts::value<int>()->required(), "The z extent (depth) of the domain.")("header-size", opts::value<size_t>()->default_value(0), "RAW file header size in bytes.")("output-dir", opts::value<std::string>()->default_value("./output"), "The output directory for VTK files.");
 
@@ -51,13 +61,15 @@ int main(int argc, char *argv[])
             return 1;
         }
 
-        // 2. Setup MPI and Domain data types
+        // Setup MPI and Domain data types
         Domain::BuildMPIDataType();
 
-        // 3. Create and run the preprocessor
+        // Create and run the preprocessor
         Preprocessor preprocessor;
 
-        int3 global_extent(vm["x-ext"].as<int>(), vm["y-ext"].as<int>(), vm["z-ext"].as<int>());
+        // int3 global_extent(vm["x-ext"].as<int>(), vm["y-ext"].as<int>(), vm["z-ext"].as<int>());
+        // Map arguments to the code's (i, j, k) = (Z, Y, X) internal indexing
+        int3 global_extent(vm["z-ext"].as<int>(), vm["y-ext"].as<int>(), vm["x-ext"].as<int>());
 
         preprocessor.setupDomain(global_extent);
         preprocessor.readRawFile(vm["raw-file"].as<std::string>(), vm["header-size"].as<size_t>());
@@ -73,6 +85,7 @@ int main(int argc, char *argv[])
         // Ensure all processes wait until the directory is created before proceeding
         MPI_Barrier(MPI_COMM_WORLD);
 
+        // Write output files
         preprocessor.writeVtkFile(out_dir + "/material_domain");
 
         MPI_Finalize();

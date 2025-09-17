@@ -2,8 +2,9 @@
 #PBS -lwalltime=00:30:00
 ## Load system modules
 module load vtk/5.8.0 
-module load mpi/intel-2019.8.254 # This is prefered over the default 2019
+module load mpi/intel-2019.8.254 # This is preferred over the default 2019
 module load boost/1.72.0
 
 cd $HOME/raw2vtk
-mpiexec -n 8 ./release/raw2vtk_uint8 --raw-file LA3_d0_v1_uint8_unnormalised_338_338_283.raw --x-ext 338 --y-ext 338 --z-ext 283
+
+mpiexec ./release/raw2vtk_uint8 --raw-file LA3_d0_v1_uint8_unnormalised_338_338_283.raw --x-ext 338 --y-ext 338 --z-ext 283

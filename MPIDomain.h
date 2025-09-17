@@ -48,6 +48,14 @@ MPIDomain<T, Padding, S>::MPIDomain()
 {
 }
 
+/**
+ * @brief Sets up the local domain for an MPI process.
+ * @details This function initialises the local domain's origin and extent, calculates the
+ * dimensions of the padded "ghost cell" region, clips the padded region to the
+ * global boundaries, and allocates memory for the data array.
+ * @param orig The origin of this process's local (unpadded) domain.
+ * @param ext The extent of this process's local (unpadded) domain.
+ */
 template <typename T, int Padding, IndexScheme S>
 void MPIDomain<T, Padding, S>::setup(int3 orig, int3 ext)
 {
@@ -72,7 +80,7 @@ void MPIDomain<T, Padding, S>::setup(int3 orig, int3 ext)
 	}
 
 	// ensure the padding does not go outside of the global domain
-	// --- START FIX: Use 'else if' to make boundary clipping mutually exclusive ---
+	// *Use 'else if' to make boundary clipping mutually exclusive
 	// i-dimension clipping
 	if (padded.origin.i < global.origin.i)
 	{
@@ -105,7 +113,6 @@ void MPIDomain<T, Padding, S>::setup(int3 orig, int3 ext)
 	{
 		padded.extent.k = (global.origin.k + global.extent.k) - padded.origin.k;
 	}
-	// --- END FIX ---
 
 	size_t n = 2;
 	if (MPIDetails::Rank() == 0 || MPIDetails::Rank() == (MPIDetails::CommSize() - 1))
@@ -117,6 +124,12 @@ void MPIDomain<T, Padding, S>::setup(int3 orig, int3 ext)
 	data = std::unique_ptr<T[]>(new T[padded.extent.size()]);
 }
 
+/**
+ * @brief Exchanges padding (ghost) cells with neighboring MPI processes.
+ * @details Uses non-blocking sends and receives (MPI_Isend/MPI_Irecv) to transfer
+ * boundary data required for stencil-based computations.
+ * @param exch_type The MPI_Datatype of the elements being exchanged.
+ */
 template <typename T, int Padding, IndexScheme S>
 void MPIDomain<T, Padding, S>::exchangePadding(MPI_Datatype exch_type)
 {
@@ -147,6 +160,11 @@ void MPIDomain<T, Padding, S>::exchangePadding(MPI_Datatype exch_type)
 	MPI_Barrier(MPI_COMM_WORLD);
 }
 
+/**
+ * @brief Sets the static global domain dimensions used for boundary checks.
+ * @param origin The origin of the entire global domain (usually (0,0,0)).
+ * @param extent The extent of the entire global domain.
+ */
 template <typename T, int Padding, IndexScheme S>
 void MPIDomain<T, Padding, S>::SetGlobal(int3 origin, int3 extent)
 {
@@ -301,6 +319,14 @@ public:
 	{
 	}
 
+	/**
+	 * @brief Initialises static variables required for mapping between local and global indices.
+	 * @details This function must be called once by all processes. It gathers the local domain
+	 * information from all processes to compute the offsets needed for global index calculation.
+	 * @param local_dom The unpadded local domain of the calling process.
+	 * @param mpi_rank The rank of the calling process.
+	 * @param mpi_comm_size The total number of MPI processes.
+	 */
 	static void Init(const Domain &local_dom, int mpi_rank, int mpi_comm_size)
 	{
 		// allocate storage for static variables
@@ -329,12 +355,24 @@ public:
 		MPISubIndex<S>::mpi_comm_size = mpi_comm_size;
 		MPISubIndex<S>::mpi_rank = mpi_rank;
 	}
-
+	/**
+	 * @brief Converts a 1D array index local to this process into a 1D global array index.
+	 * @param local_idx The 1D index in the local process's data array.
+	 * @return The corresponding 1D index in the global array.
+	 */
 	static int LocalToGlobal(int local_idx)
 	{
 		return offsets[mpi_rank] + local_idx;
 	}
 
+	/**
+	 * @brief Calculates the global 1D array index for the current 3D index.
+	 * @details Determines which process owns the 3D index and computes the global
+	 * 1D index by adding that process's offset to its local 1D index.
+	 * @param local_dom The MPIDomain of the current process.
+	 * @return The calculated global 1D array index.
+	 * @throws std::runtime_error if the 3D index is not found in any process's domain.
+	 */
 	template <typename T, int Padding>
 	int globalArrayId(const MPIDomain<T, Padding, S> &local_dom)
 	{
@@ -354,6 +392,10 @@ public:
 		}
 	}
 
+	/**
+	 * @brief Gets the global array offset for the current MPI process.
+	 * @return The number of elements preceding this process's data in the global 1D array.
+	 */
 	static unsigned int GetOffset()
 	{
 		return offsets[mpi_rank];

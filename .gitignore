@@ -17,6 +17,8 @@ raw2vtk_uint16
 /output/*
 /vtk_output/*
 
+# PBS logs
+*.pbs.*
 
 # System and editor files
 # Windows

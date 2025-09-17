@@ -13,6 +13,8 @@
 #include <vtkUnsignedCharArray.h>
 #include "MPIDetails.h"
 
+using namespace std;
+
 Preprocessor::Preprocessor()
 {
     mpi_rank = MPIDetails::Rank();
@@ -21,30 +23,36 @@ Preprocessor::Preprocessor()
 
 Preprocessor::~Preprocessor() {}
 
+/**
+ * @brief Decomposes the global domain among processes.
+ * @details This template is specialised for different IndexScheme enums (e.g., ZFastest)
+ * to perform a 1D decomposition along the appropriate axis (i.e. ZFastest implies decomposing along X axis,
+ * XFastest implies decomposing along Z axis).
+ */
 template <>
 void Preprocessor::decomposeDomain<ZFastest>()
 {
     local_domain = global_domain;
-    local_domain.origin.i = mpi_rank * (global_domain.extent.i / mpi_comm_size);
-    local_domain.extent.i = global_domain.extent.i / mpi_comm_size;
-    if (mpi_rank == mpi_comm_size - 1)
-    {
-        local_domain.extent.i = global_domain.extent.i - (local_domain.origin.i - global_domain.origin.i);
-    }
+    int block_size = global_domain.extent.i / mpi_comm_size;
+    local_domain.origin.i = mpi_rank * block_size;
+
+    // This ensures the last process gets all remaining voxels
+    local_domain.extent.i = (mpi_rank == mpi_comm_size - 1) ? (global_domain.extent.i - local_domain.origin.i) : block_size;
 }
 
 template <>
 void Preprocessor::decomposeDomain<XFastest>()
 {
     local_domain = global_domain;
-    local_domain.origin.k = mpi_rank * (global_domain.extent.k / mpi_comm_size);
-    local_domain.extent.k = global_domain.extent.k / mpi_comm_size;
-    if (mpi_rank == mpi_comm_size - 1)
-    {
-        local_domain.extent.k = global_domain.extent.k - (local_domain.origin.k - global_domain.origin.k);
-    }
+    int block_size = global_domain.extent.k / mpi_comm_size;
+    local_domain.origin.k = mpi_rank * block_size;
+    local_domain.extent.k = (mpi_rank == mpi_comm_size - 1) ? (global_domain.extent.k - local_domain.origin.k) : block_size;
 }
 
+/**
+ * @brief Sets up the global simulation domain and decomposes it across MPI processes.
+ * @param gextent The dimensions (i, j, k) of the entire dataset.
+ */
 void Preprocessor::setupDomain(int3 gextent)
 {
     global_domain.origin = int3();
@@ -63,6 +71,14 @@ void Preprocessor::setupDomain(int3 gextent)
     }
 }
 
+/**
+ * @brief Manages the reading of the raw image file into the distributed domain.
+ * @details Verifies that the file size matches the expected domain size and then
+ * uses MPIRawLoader to perform the parallel read.
+ * @param filename The path to the .raw input file.
+ * @param header_size The size of the file header in bytes.
+ * @throws std::runtime_error if the file size does not match the domain dimensions.
+ */
 void Preprocessor::readRawFile(const std::string &filename, size_t header_size)
 {
     if (mpi_rank == 0)
@@ -96,9 +112,15 @@ void Preprocessor::readRawFile(const std::string &filename, size_t header_size)
     }
 }
 
+/**
+ * @brief Writes the data to a set of VTK files.
+ * @details The root process writes a master .pvti file that references individual .vti
+ * part files written by each process.
+ * @param fname_root The base filename for the output files (e.g., "./output/material").
+ */
 void Preprocessor::writeVtkFile(const std::string &fname_root)
 {
-    // Write the master .pvti file from the root process
+    // Write the master .pvti file on the root process
     if (mpi_rank == 0)
     {
         std::stringstream pvti_fname;
@@ -113,57 +135,82 @@ void Preprocessor::writeVtkFile(const std::string &fname_root)
         fout << "GhostLevel=\"0\" Origin=\"0 0 0\" Spacing=\"1 1 1\">" << std::endl;
         fout << "\t\t<PPointData Scalars=\"MaterialType\">" << std::endl;
 
-        // --- START FIX: Use the new DATA_TYPE macro ---
 #if DATA_TYPE == 16
         fout << "\t\t\t<PDataArray type=\"UInt16\" Name=\"MaterialType\"/>" << std::endl;
 #elif DATA_TYPE == 8
         fout << "\t\t\t<PDataArray type=\"UInt8\" Name=\"MaterialType\"/>" << std::endl;
 #endif
-        // --- END FIX ---
 
         fout << "\t\t</PPointData>" << std::endl;
 
+        // Write the references to the part files with their corresponding extent
         for (int proc = 0; proc < mpi_comm_size; ++proc)
         {
-            std::stringstream vti_fname;
-            vti_fname << fname_root << "_" << proc << ".vti";
+            std::stringstream piece_fname;
+            std::string root_basename = fname_root.substr(fname_root.find_last_of("/\\") + 1);
+            piece_fname << root_basename << "_" << proc << ".vti";
+
+            const Domain &piece_dom = MPISubIndex<IDX_SCHEME>::all_local_domains[proc];
+            int max_i = piece_dom.origin.i + piece_dom.extent.i - 1;
+
+            // Add the one-voxel overlap for all pieces except the very last one
+            if (proc != mpi_comm_size - 1)
+            {
+                max_i++;
+            }
+
             fout << "\t\t<Piece Extent=\"";
-            fout << MPISubIndex<IDX_SCHEME>::all_local_domains[proc].origin.i << " "
-                 << MPISubIndex<IDX_SCHEME>::all_local_domains[proc].origin.i + MPISubIndex<IDX_SCHEME>::all_local_domains[proc].extent.i - 1 << " ";
-            fout << MPISubIndex<IDX_SCHEME>::all_local_domains[proc].origin.j << " "
-                 << MPISubIndex<IDX_SCHEME>::all_local_domains[proc].origin.j + MPISubIndex<IDX_SCHEME>::all_local_domains[proc].extent.j - 1 << " ";
-            fout << MPISubIndex<IDX_SCHEME>::all_local_domains[proc].origin.k << " "
-                 << MPISubIndex<IDX_SCHEME>::all_local_domains[proc].origin.k + MPISubIndex<IDX_SCHEME>::all_local_domains[proc].extent.k - 1 << "\" ";
-            fout << "Source=\"" << vti_fname.str().substr(fname_root.find_last_of("/\\") + 1) << "\"/>" << std::endl;
+            fout << piece_dom.origin.i << " " << max_i << " ";
+            fout << piece_dom.origin.j << " " << piece_dom.origin.j + piece_dom.extent.j - 1 << " ";
+            fout << piece_dom.origin.k << " " << piece_dom.origin.k + piece_dom.extent.k - 1 << "\" ";
+            fout << "Source=\"" << piece_fname.str() << "\"/>" << std::endl;
         }
         fout << "\t</PImageData>" << std::endl;
         fout << "</VTKFile>" << std::endl;
         fout.close();
-        std::cout << "Wrote master VTK file: " << pvti_fname.str() << std::endl;
     }
 
-    // Each process writes its own .vti piece file
+    // Ensure all processes wait for rank 0 to finish writing the master file
+    MPI_Barrier(MPI_COMM_WORLD);
+
+    // Each process writes its own .vti part file using the "safe" copy method
     std::stringstream vti_fname;
     vti_fname << fname_root << "_" << mpi_rank << ".vti";
 
-    vtkSmartPointer<vtkImageData> imageData = vtkSmartPointer<vtkImageData>::New();
-    imageData->SetExtent(
-        local_domain.origin.i, local_domain.origin.i + local_domain.extent.i - 1,
-        local_domain.origin.j, local_domain.origin.j + local_domain.extent.j - 1,
-        local_domain.origin.k, local_domain.origin.k + local_domain.extent.k - 1);
+    int off_pos = (mpi_rank == mpi_comm_size - 1) ? 0 : 1;
 
-    // --- START FIX: Use the new DATA_TYPE macro to select the correct VTK Array type ---
+    vtkSmartPointer<vtkImageData> imageData = vtkSmartPointer<vtkImageData>::New();
+    imageData->SetExtent(local_domain.origin.i, local_domain.origin.i + local_domain.extent.i - 1 + off_pos,
+                         local_domain.origin.j, local_domain.origin.j + local_domain.extent.j - 1,
+                         local_domain.origin.k, local_domain.origin.k + local_domain.extent.k - 1);
+
+    size_t num_voxels_to_write = (size_t)(local_domain.extent.i + off_pos) * local_domain.extent.j * local_domain.extent.k;
+
+    // Create the appropriate VTK array and allocate memory inside it
 #if DATA_TYPE == 16
     vtkSmartPointer<vtkUnsignedShortArray> type_arr = vtkSmartPointer<vtkUnsignedShortArray>::New();
 #elif DATA_TYPE == 8
     vtkSmartPointer<vtkUnsignedCharArray> type_arr = vtkSmartPointer<vtkUnsignedCharArray>::New();
 #endif
-    // --- END FIX ---
-
     type_arr->SetName("MaterialType");
     type_arr->SetNumberOfComponents(1);
+    type_arr->SetNumberOfValues(num_voxels_to_write);
 
-    type_arr->SetArray(material_data.getData().get() + material_data.pad_size, local_domain.extent.size(), 1);
+    // Loop through all voxels to be written (including the overlap)
+    // and copy the data from your simulation buffer to the VTK buffer.
+    size_t count = 0;
+    for (int k = local_domain.origin.k; k < (local_domain.origin.k + local_domain.extent.k); ++k)
+    {
+        for (int j = local_domain.origin.j; j < (local_domain.origin.j + local_domain.extent.j); ++j)
+        {
+            for (int i = local_domain.origin.i; i < (local_domain.origin.i + local_domain.extent.i + off_pos); ++i)
+            {
+                Index idx(i, j, k);
+                type_arr->SetValue(count, material_data[idx]);
+                count++;
+            }
+        }
+    }
 
     imageData->GetPointData()->AddArray(type_arr);
 
